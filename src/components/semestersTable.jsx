@@ -1,10 +1,7 @@
 import { useState } from "react";
-import coursesData from "../data/courses.json";
 
-function SemestersTable({ semesters, onCourseSelect }) {
+function SemestersTable({ semesters, onCourseSelect, courseOptions }) {
   const [selectedSlot, setSelectedSlot] = useState(null);
-
-  const courseOptions = coursesData.courses.map((course) => course.id);
 
   function handleSlotClick(semesterIndex, courseIndex) {
     setSelectedSlot({ semesterIndex, courseIndex });
@@ -88,8 +85,8 @@ function SemestersTable({ semesters, onCourseSelect }) {
                     >
                       <option value="">Select a course</option>
                       {courseOptions.map((courseOption) => (
-                        <option key={courseOption} value={courseOption}>
-                          {courseOption}
+                        <option key={courseOption.code} value={courseOption.id}>
+                          {courseOption.id} — {courseOption.name}
                         </option>
                       ))}
                       <option value="__CUSTOM__">Custom course...</option>

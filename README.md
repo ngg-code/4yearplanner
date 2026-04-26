@@ -1,16 +1,32 @@
-# React + Vite
+# Grinnell 4-Year Planner
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React reads planner data from the SQL-backed API in `server/` instead of importing
+JSON files directly.
 
-Currently, two official plugins are available:
+## Setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. Create a PostgreSQL database.
+2. Copy `.env.example` to `.env` and update the `PG*` values.
+3. Load the schema and seed data:
 
-## React Compiler
+```sh
+psql "$DATABASE_URL" -f sql/99_run_all.sql
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+If you use separate `PGHOST`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD` values,
+run `psql -f sql/99_run_all.sql` after exporting those variables.
 
-## Expanding the ESLint configuration
+## Run
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Use two terminals:
+
+```sh
+npm run server
+```
+
+```sh
+npm run dev
+```
+
+The React app calls `/api/courses` and `/api/majors/CSC/requirements`; Vite
+proxies those requests to `http://localhost:3001`.

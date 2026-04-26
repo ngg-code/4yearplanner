@@ -1,6 +1,3 @@
-Physics · SQL
-Copy
-
 BEGIN;
  
 -- ============================================================
@@ -46,6 +43,101 @@ INSERT INTO courses(dept, number, course_code, title, credits) VALUES
 ('CSC',161,'CSC 161','Imperative Problem Solving with Lab',4)
  
 ON CONFLICT (course_code) DO NOTHING;
+
+-- ------------------------------------------------------------
+-- Course prerequisites used by the planner
+-- Source: Grinnell 2025-2026 catalog, Physics, B.A.
+-- ------------------------------------------------------------
+DELETE FROM course_prerequisite_groups
+USING courses c
+WHERE course_prerequisite_groups.course_id = c.id
+  AND c.course_code IN (
+    'PHY 131','PHY 132','PHY 220','PHY 232','PHY 234','PHY 310',
+    'PHY 314','PHY 335','PHY 337','PHY 340','PHY 360','PHY 456',
+    'PHY 457','PHY 462','MAT 133','MAT 215','MAT 220'
+  );
+
+DELETE FROM course_prerequisites
+USING courses c
+WHERE course_prerequisites.course_id = c.id
+  AND c.course_code IN (
+    'PHY 131','PHY 132','PHY 220','PHY 232','PHY 234','PHY 310',
+    'PHY 314','PHY 335','PHY 337','PHY 340','PHY 360','PHY 456',
+    'PHY 457','PHY 462','MAT 133','MAT 215','MAT 220'
+  );
+
+INSERT INTO course_prerequisite_groups(
+  course_id,
+  group_code,
+  prerequisite_course_id,
+  can_be_corequisite
+)
+SELECT course.id, v.group_code, prereq.id, v.can_be_corequisite
+FROM (VALUES
+  -- MAT sequence
+  ('MAT 133','calc1','MAT 124',false),
+  ('MAT 133','calc1','MAT 131',false),
+  ('MAT 215','mat133','MAT 133',false),
+  ('MAT 220','mat215','MAT 215',false),
+
+  -- PHY 131: MAT 124 or MAT 131 may be prerequisite or co-requisite.
+  ('PHY 131','calc1','MAT 124',true),
+  ('PHY 131','calc1','MAT 131',true),
+
+  -- PHY core
+  ('PHY 132','phy131','PHY 131',false),
+  ('PHY 132','calc1','MAT 124',false),
+  ('PHY 132','calc1','MAT 131',false),
+  ('PHY 232','phy131','PHY 131',false),
+  ('PHY 232','phy132','PHY 132',false),
+  ('PHY 232','mat215','MAT 215',true),
+  ('PHY 234','phy131','PHY 131',false),
+  ('PHY 234','phy132','PHY 132',false),
+  ('PHY 234','mat220','MAT 220',true),
+  ('PHY 335','phy234','PHY 234',false),
+  ('PHY 337','phy335','PHY 335',false),
+
+  -- PHY electives
+  ('PHY 220','phy132','PHY 132',false),
+  ('PHY 310','phy234','PHY 234',false),
+  ('PHY 314','phy232','PHY 232',false),
+  ('PHY 314','mat220','MAT 220',false),
+  ('PHY 340','phy232','PHY 232',false),
+  ('PHY 360','phy232','PHY 232',false),
+  ('PHY 456','phy232','PHY 232',false),
+  ('PHY 456','mat220','MAT 220',false),
+  ('PHY 456','phy335','PHY 335',false),
+  ('PHY 457','phy456','PHY 456',false)
+) AS v(course_code, group_code, prerequisite_code, can_be_corequisite)
+JOIN courses course ON course.course_code = v.course_code
+JOIN courses prereq ON prereq.course_code = v.prerequisite_code
+ON CONFLICT DO NOTHING;
+
+INSERT INTO course_registration_rules(
+  course_id,
+  min_semester_index,
+  min_prior_courses_dept,
+  min_prior_courses_min_number,
+  min_prior_courses_max_number,
+  min_prior_courses_count,
+  notes
+)
+SELECT c.id,
+       6,
+       'PHY',
+       200,
+       399,
+       3,
+       'Senior standing and at least three 200- or 300-level physics courses.'
+FROM courses c
+WHERE c.course_code = 'PHY 462'
+ON CONFLICT (course_id) DO UPDATE
+SET min_semester_index = EXCLUDED.min_semester_index,
+    min_prior_courses_dept = EXCLUDED.min_prior_courses_dept,
+    min_prior_courses_min_number = EXCLUDED.min_prior_courses_min_number,
+    min_prior_courses_max_number = EXCLUDED.min_prior_courses_max_number,
+    min_prior_courses_count = EXCLUDED.min_prior_courses_count,
+    notes = EXCLUDED.notes;
  
 -- ------------------------------------------------------------
 -- 3) Core: PHY 131

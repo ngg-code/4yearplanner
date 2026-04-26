@@ -149,13 +149,22 @@ INSERT INTO requirement_blocks(
 SELECT m.id,
        'ECN_HISTORY',
        'History Requirement',
-       'custom',
+       'choose_one',
        4,
        'Complete one history course above the 100-level from a list approved by the economics department. This course does not count toward the eight-course minimum required for the major. Approved off-campus study courses should be handled by backend or approval metadata.',
        80
 FROM majors m
 WHERE m.code = 'ECN'
 ON CONFLICT (major_id, code) DO NOTHING;
+
+UPDATE requirement_blocks rb
+SET rule_type = 'choose_one',
+    min_count = 1,
+    min_credits = 4
+FROM majors m
+WHERE rb.major_id = m.id
+  AND m.code = 'ECN'
+  AND rb.code = 'ECN_HISTORY';
 
 -- ------------------------------------------------------------
 -- 9) Overall major totals / policy block
@@ -254,6 +263,16 @@ JOIN courses c ON c.course_code IN (
 )
 WHERE m.code = 'ECN'
   AND b.code = 'ECN_SEMINARS'
+ON CONFLICT DO NOTHING;
+
+-- History requirement options: any seeded HIS course above the 100-level.
+INSERT INTO block_course_options(block_id, course_id)
+SELECT b.id, c.id
+FROM requirement_blocks b
+JOIN majors m ON m.id = b.major_id
+JOIN courses c ON c.dept = 'HIS' AND c.number > 100
+WHERE m.code = 'ECN'
+  AND b.code = 'ECN_HISTORY'
 ON CONFLICT DO NOTHING;
 
 COMMIT;

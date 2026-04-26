@@ -29,6 +29,8 @@ INSERT INTO courses(dept, number, course_code, title, credits) VALUES
 ('CSC',341,'CSC 341','Automata, Formal Languages, and Computational Complexity',4),
 
 ('MAT',131,'MAT 131','Calculus I',4),
+('MAT',133,'MAT 133','Calculus II',4),
+('MAT',215,'MAT 215','Linear Algebra',4),
 ('MAT',208,'MAT 208','Discrete Structures',4),
 ('MAT',218,'MAT 218','Discrete Bridges to Advanced Mathematics',4),
 
@@ -39,6 +41,60 @@ INSERT INTO courses(dept, number, course_code, title, credits) VALUES
 ('STA',336,'STA 336',NULL,4)
 
 ON CONFLICT (course_code) DO NOTHING;
+
+-- ------------------------------------------------------------
+-- Course offering terms used by the planner
+-- ------------------------------------------------------------
+INSERT INTO course_terms(course_id, term)
+SELECT c.id, v.term
+FROM courses c
+JOIN (VALUES
+  ('CSC 151','Fall'), ('CSC 151','Spring'),
+  ('CSC 161','Fall'), ('CSC 161','Spring'),
+  ('CSC 207','Fall'), ('CSC 207','Spring'),
+  ('CSC 208','Spring'),
+  ('CSC 211','Spring'),
+  ('CSC 213','Fall'),
+  ('CSC 281','Fall'),
+  ('CSC 282','Spring'),
+  ('CSC 301','Fall'), ('CSC 301','Spring'),
+  ('CSC 324','Fall'), ('CSC 324','Spring'),
+  ('CSC 326','Fall'), ('CSC 326','Spring'),
+  ('CSC 341','Fall'), ('CSC 341','Spring'),
+  ('MAT 131','Fall'), ('MAT 131','Spring'),
+  ('MAT 133','Fall'), ('MAT 133','Spring'),
+  ('MAT 215','Fall'), ('MAT 215','Spring'),
+  ('MAT 208','Spring'),
+  ('MAT 218','Fall'), ('MAT 218','Spring')
+) AS v(course_code, term) ON v.course_code = c.course_code
+ON CONFLICT DO NOTHING;
+
+-- ------------------------------------------------------------
+-- Course prerequisites used by the planner
+-- ------------------------------------------------------------
+INSERT INTO course_prerequisites(course_id, prerequisite_course_id)
+SELECT course.id, prereq.id
+FROM (VALUES
+  ('CSC 161','CSC 151'),
+  ('CSC 207','CSC 151'),
+  ('CSC 207','CSC 161'),
+  ('CSC 208','CSC 151'),
+  ('CSC 211','CSC 161'),
+  ('CSC 213','CSC 161'),
+  ('CSC 281','CSC 151'),
+  ('CSC 282','CSC 161'),
+  ('CSC 301','CSC 207'),
+  ('CSC 324','CSC 207'),
+  ('CSC 326','CSC 324'),
+  ('CSC 341','CSC 207'),
+  ('MAT 133','MAT 131'),
+  ('MAT 215','MAT 133'),
+  ('MAT 208','MAT 215'),
+  ('MAT 218','MAT 215')
+) AS v(course_code, prerequisite_code)
+JOIN courses course ON course.course_code = v.course_code
+JOIN courses prereq ON prereq.course_code = v.prerequisite_code
+ON CONFLICT DO NOTHING;
 
 -- ------------------------------------------------------------
 -- 3) Introductory Sequence

@@ -45,6 +45,38 @@ CREATE TABLE IF NOT EXISTS courses (
   active        BOOLEAN NOT NULL DEFAULT TRUE
 );
 
+CREATE TABLE IF NOT EXISTS course_terms (
+  course_id     BIGINT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  term          TEXT NOT NULL CHECK (term IN ('Fall','Spring','Summer','Winter')),
+  PRIMARY KEY (course_id, term)
+);
+
+CREATE TABLE IF NOT EXISTS course_prerequisites (
+  course_id                 BIGINT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  prerequisite_course_id    BIGINT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  PRIMARY KEY (course_id, prerequisite_course_id),
+  CHECK (course_id <> prerequisite_course_id)
+);
+
+CREATE TABLE IF NOT EXISTS course_prerequisite_groups (
+  course_id                 BIGINT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  group_code                TEXT NOT NULL,
+  prerequisite_course_id    BIGINT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  can_be_corequisite        BOOLEAN NOT NULL DEFAULT FALSE,
+  PRIMARY KEY (course_id, group_code, prerequisite_course_id),
+  CHECK (course_id <> prerequisite_course_id)
+);
+
+CREATE TABLE IF NOT EXISTS course_registration_rules (
+  course_id                         BIGINT PRIMARY KEY REFERENCES courses(id) ON DELETE CASCADE,
+  min_semester_index                INT,
+  min_prior_courses_dept            TEXT,
+  min_prior_courses_min_number      INT,
+  min_prior_courses_max_number      INT,
+  min_prior_courses_count           INT,
+  notes                             TEXT
+);
+
 CREATE TABLE IF NOT EXISTS plan_courses (
   plan_id       BIGINT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
   course_id     BIGINT NOT NULL REFERENCES courses(id),

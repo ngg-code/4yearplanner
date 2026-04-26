@@ -1,17 +1,19 @@
-import majorRequirements from "../data/major_requirements.json";
-import coursesData from "../data/courses.json";
-
-function MajorRequirements({ semesters }) {
-  const reqs = majorRequirements.requirements;
-
+function MajorRequirements({ semesters, coursesData, majorRequirements }) {
   function normalizeCourse(course) {
-    return course ? course.toUpperCase().replaceAll("-", "") : "";
+    return course
+      ? course.toUpperCase().replaceAll("-", "").replaceAll(" ", "")
+      : "";
   }
 
-  const allCourses = semesters
-    .flatMap((semester) => semester.courses)
-    .filter(Boolean)
-    .map(normalizeCourse);
+  const checkedSemesters = semesters || [];
+  const hasCheckedPlan = Boolean(semesters);
+
+  const plannedCourses = new Set(
+    checkedSemesters
+      .flatMap((semester) => semester.courses)
+      .filter(Boolean)
+      .map(normalizeCourse),
+  );
 
   const courseMap = {};
   for (const course of coursesData.courses) {
@@ -19,75 +21,223 @@ function MajorRequirements({ semesters }) {
     courseMap[normalizeCourse(course.id)] = course;
   }
 
-  function getSatisfiedCourse(category, value) {
-    if (!Array.isArray(value)) {
-      if (value.type === "level-based") {
-        return (
-          allCourses.find(
-            (course) =>
-              course.startsWith(value.prefix) &&
-             getCourseLevelNumber(course) >= value.minLevel,
-          ) || null
-        );
-      }
-
-      return null;
-    }
-
-    const matches = value.filter((course) =>
-      allCourses.includes(normalizeCourse(course)),
+  function getCompletedCourses(block) {
+    return block.courseCodes.filter((course) =>
+      plannedCourses.has(normalizeCourse(course)),
     );
-
-    if (category === "Discrete Structures (one of)" || category === "Systems") {
-      return matches[0] || null;
-    }
-
-    return matches.length === value.length ? matches : null;
   }
 
-  function isRequirementMet(category, value) {
-    if (!Array.isArray(value)) {
-      if (value.type === "level-based") {
-        return allCourses.some(
-          (course) =>
-            course.startsWith(value.prefix) &&
-            getCourseLevelNumber(course) >= value.minLevel,
-        );
+  function getBlockStatus(block) {
+    const completedCourses = getCompletedCourses(block);
+    const completedCredits = completedCourses.reduce((total, code) => {
+      return total + (courseMap[normalizeCourse(code)]?.credits || 0);
+    }, 0);
+
+    if (block.code === "ANTH_FOUR_FIELDS") {
+      const usedSubfields = new Set();
+      const usedCourses = [];
+
+      for (const code of plannedCourses) {
+        const course = courseMap[code];
+        const number = getCourseNumber(code);
+        if (!course || !code.startsWith("ANT") || number < 200) continue;
+
+        for (const subfield of course.subfields || []) {
+          usedSubfields.add(subfield);
+        }
+
+        if (course.subfields?.length) {
+          usedCourses.push(code);
+        }
       }
 
-      return false;
+      return {
+        completed: usedSubfields.size >= 3,
+        completedCourses: usedCourses,
+        completedCredits: usedCourses.length * 4,
+        detail: `${usedSubfields.size} / 3 subfields`,
+      };
     }
 
-    if (category === "Discrete Structures (one of)" || category === "Systems") {
-      return value.some((course) =>
-        allCourses.includes(normalizeCourse(course)),
+    if (block.code === "ANTH_ADV_PATH_B") {
+      const hasThesis = plannedCourses.has("ANT499");
+      const advancedCourses = Array.from(plannedCourses).filter((code) => {
+        return code.startsWith("ANT") && getCourseNumber(code) >= 300;
+      });
+
+      return {
+        completed: hasThesis && advancedCourses.length >= 1,
+        completedCourses: [
+          ...advancedCourses,
+          ...(hasThesis ? ["ANT499"] : []),
+        ],
+        completedCredits: advancedCourses.length * 4 + (hasThesis ? 4 : 0),
+      };
+    }
+
+    if (block.code === "CSC_ELECTIVE") {
+      const requiredCodes = getUsedRequiredCourses();
+      const usedElectives = [];
+      let completedCredits = 0;
+
+      for (const code of plannedCourses) {
+        const course = courseMap[code];
+        if (!course || !code.startsWith("CSC")) continue;
+        if (requiredCodes.has(code)) continue;
+        if (["CSC281", "CSC282"].includes(code)) continue;
+        if (getCourseNumber(code) < 200) continue;
+
+        const credits =
+          code === "CSC326" ? Math.min(course.credits || 0, 2) : course.credits || 0;
+        completedCredits += credits;
+        usedElectives.push(code);
+      }
+
+      const systemsTaken = ["CSC211", "CSC213"].filter((code) =>
+        plannedCourses.has(code),
       );
+      if (systemsTaken.length === 2) {
+        const extraSystemsCourse = systemsTaken.find(
+          (code) => !usedElectives.includes(code),
+        );
+        if (extraSystemsCourse) {
+          completedCredits += courseMap[extraSystemsCourse]?.credits || 0;
+          usedElectives.push(extraSystemsCourse);
+        }
+      }
+
+      return {
+        completed: completedCredits >= (block.minCredits || 4),
+        completedCourses: usedElectives,
+        completedCredits,
+        detail: `${completedCredits} / ${block.minCredits || 4} credits`,
+      };
     }
 
-    return value.every((course) =>
-      allCourses.includes(normalizeCourse(course)),
-    );
+    if (block.code === "CSC_MATH_ELECTIVE") {
+      const usedMathCourses = Array.from(plannedCourses).filter((code) => {
+        if (code.startsWith("MAT") && getCourseNumber(code) > 131) return true;
+        if (code.startsWith("STA")) return true;
+        return false;
+      });
+
+      return {
+        completed: usedMathCourses.length >= 1,
+        completedCourses: usedMathCourses,
+        completedCredits: usedMathCourses.reduce(
+          (total, code) => total + (courseMap[code]?.credits || 0),
+          0,
+        ),
+      };
+    }
+
+    if (block.code === "CSC_TOTALS_AND_POLICIES") {
+      const usedCourses = Array.from(plannedCourses).filter((code) => {
+        if (code.startsWith("CSC") && getCourseNumber(code) >= 151) return true;
+        if (["MAT208", "MAT218"].includes(code)) return true;
+        return false;
+      });
+      const completedCredits = usedCourses.reduce(
+        (total, code) => total + (courseMap[code]?.credits || 0),
+        0,
+      );
+
+      return {
+        completed: completedCredits >= (block.minCredits || 32),
+        completedCourses: usedCourses,
+        completedCredits,
+        detail: `${completedCredits} / ${block.minCredits || 32} credits`,
+      };
+    }
+
+    if (block.ruleType === "must_take") {
+      return {
+        completed:
+          block.courseCodes.length > 0 &&
+          completedCourses.length === block.courseCodes.length,
+        completedCourses,
+        completedCredits,
+      };
+    }
+
+    if (block.ruleType === "choose_one") {
+      return {
+        completed: completedCourses.length >= 1,
+        completedCourses,
+        completedCredits,
+      };
+    }
+
+    if (block.ruleType === "choose_n") {
+      return {
+        completed: completedCourses.length >= (block.minCount || 1),
+        completedCourses,
+        completedCredits,
+      };
+    }
+
+    if (block.ruleType === "choose_credits") {
+      return {
+        completed: completedCredits >= (block.minCredits || 0),
+        completedCourses,
+        completedCredits,
+      };
+    }
+
+    return {
+      completed: false,
+      completedCourses,
+      completedCredits,
+    };
   }
 
-  function getUsedRequirementCourses() {
+  function getRuleLabel(block) {
+    if (block.ruleType === "must_take") return "Required";
+    if (block.ruleType === "choose_one") return "Choose 1";
+    if (block.ruleType === "choose_n") return `Choose ${block.minCount || 1}`;
+    if (block.ruleType === "choose_credits") {
+      return `Choose ${block.minCredits || 0} credits`;
+    }
+    if (block.ruleType === "or_group") return "Choose one path";
+    return "Custom rule";
+  }
+
+  function getCourseLabel(code) {
+    const course = courseMap[normalizeCourse(code)];
+    return course ? `${course.id}: ${course.name}` : code;
+  }
+
+  function getCourseNumber(code) {
+    const match = normalizeCourse(code).match(/\d+/);
+    return match ? parseInt(match[0], 10) : 0;
+  }
+
+  function getUsedRequiredCourses() {
     const used = new Set();
 
-    for (const [category, value] of Object.entries(reqs)) {
-      if (!Array.isArray(value)) continue;
+    for (const block of majorRequirements.blocks) {
+      if (block.code === "CSC_ELECTIVE") continue;
+      if (!["must_take", "choose_one", "choose_n"].includes(block.ruleType)) {
+        continue;
+      }
 
-      if (
-        category === "Discrete Structures (one of)" ||
-        category === "Systems"
-      ) {
-        const chosen = value.find((course) =>
-          allCourses.includes(normalizeCourse(course)),
-        );
-        if (chosen) used.add(normalizeCourse(chosen));
-      } else {
-        for (const course of value) {
-          if (allCourses.includes(normalizeCourse(course))) {
-            used.add(normalizeCourse(course));
-          }
+      if (block.ruleType === "must_take") {
+        for (const code of block.courseCodes) {
+          const normalized = normalizeCourse(code);
+          if (plannedCourses.has(normalized)) used.add(normalized);
+        }
+      }
+
+      if (block.ruleType === "choose_one") {
+        const chosen = block.courseCodes
+          .map(normalizeCourse)
+          .find((code) => plannedCourses.has(code));
+        if (chosen) used.add(chosen);
+      }
+
+      if (block.ruleType === "choose_n") {
+        for (const code of block.courseCodes.map(normalizeCourse)) {
+          if (plannedCourses.has(code)) used.add(code);
         }
       }
     }
@@ -95,137 +245,57 @@ function MajorRequirements({ semesters }) {
     return used;
   }
 
-  function getCourseLevelNumber(code) {
-    const normalized = normalizeCourse(code);
-    const match = normalized.match(/\d+/);
-    return match ? parseInt(match[0], 10) : 0;
-  }
-
-  function getElectivesStatus() {
-    const electiveReq = reqs.electives;
-    const usedRequirementCourses = getUsedRequirementCourses();
-
-
-    const takenCourseObjects = allCourses
-      .map((code) => courseMap[code])
-      .filter(Boolean);
-
-    const validElectives = [];
-    const countedCodes = new Set();
-
-    for (const course of takenCourseObjects) {
-      const normalized = normalizeCourse(course.code);
-
-      if (countedCodes.has(normalized)) continue;
-
-      const allowedPrefix = electiveReq.allowedPrefixes.some((prefix) =>
-        normalized.startsWith(prefix),
-      );
-
-      const meetsLevel =
-        getCourseLevelNumber(normalized) >= electiveReq.minLevel;
-
-      const isExcluded = electiveReq.excludedCourses
-        .map(normalizeCourse)
-        .includes(normalized);
-
-      const alreadyUsedForRequirement = usedRequirementCourses.has(normalized);
-
-      if (
-        allowedPrefix &&
-        meetsLevel &&
-        !isExcluded &&
-        !alreadyUsedForRequirement
-      ) {
-        validElectives.push(course);
-        countedCodes.add(normalized);
-      }
-    }
-
-    // Special rule: if both CSC211 and CSC213 are taken,
-    // one satisfies Systems and the other may count as an elective.
-    const systemsTaken = ["CSC211", "CSC213"].filter((code) =>
-      allCourses.includes(normalizeCourse(code)),
-    );
-
-    if (systemsTaken.length === 2) {
-      const systemsUsed = Array.from(usedRequirementCourses).find(
-        (code) => code === "CSC211" || code === "CSC213",
-      );
-
-      const extraSystemsCourse = systemsTaken.find(
-        (code) => normalizeCourse(code) !== systemsUsed,
-      );
-
-      if (
-        extraSystemsCourse &&
-        !countedCodes.has(normalizeCourse(extraSystemsCourse))
-      ) {
-        const extraCourseObj = courseMap[normalizeCourse(extraSystemsCourse)];
-        if (extraCourseObj) {
-          validElectives.push(extraCourseObj);
-          countedCodes.add(normalizeCourse(extraSystemsCourse));
-        }
-      }
-    }
-
-    let totalCredits = 0;
-    const usedElectives = [];
-
-    for (const course of validElectives) {
-      let creditsToAdd = course.credits || 0;
-      const normalized = normalizeCourse(course.code);
-
-      if (
-        normalized === "CSC326" &&
-        electiveReq.specialRules?.CSC326?.maxCredits !== undefined
-      ) {
-        creditsToAdd = Math.min(
-          creditsToAdd,
-          electiveReq.specialRules.CSC326.maxCredits,
-        );
-      }
-
-      totalCredits += creditsToAdd;
-      usedElectives.push({
-        code: normalizeCourse(course.code),
-        name: course.name,
-        creditsCounted: creditsToAdd,
-      });
-    }
-
-    return {
-      completed: totalCredits >= electiveReq.credits,
-      totalCredits,
-      neededCredits: electiveReq.credits,
-      usedElectives,
-    };
-  }
-
-  const electivesStatus = getElectivesStatus();
-
   return (
     <div style={{ marginTop: "40px", color: "black" }}>
-      <h2 style={{ color: "black" }}>Computer Science Major Requirements</h2>
+      <h2 style={{ color: "black" }}>
+        {majorRequirements.major.name} Major Requirements
+      </h2>
       <p>{majorRequirements.major.description}</p>
+
+      {!hasCheckedPlan && (
+        <div
+          style={{
+            marginTop: "20px",
+            padding: "12px 16px",
+            borderRadius: "8px",
+            backgroundColor: "#eef2ff",
+            border: "1px solid #c7d2fe",
+          }}
+        >
+          Add or update courses, then click Check Requirements to refresh these
+          results.
+        </div>
+      )}
 
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(2, 1fr)",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
           gap: "16px",
           marginTop: "20px",
           textAlign: "left",
         }}
       >
-        {Object.entries(reqs).map(([category, value]) => {
-          const satisfied = getSatisfiedCourse(category, value);
-          const completed =
-            category === "electives" ? electivesStatus.completed : !!satisfied;
+        {majorRequirements.blocks.map((block) => {
+          const status = getBlockStatus(block);
+          const canAutoCheck = [
+            "must_take",
+            "choose_one",
+            "choose_n",
+            "choose_credits",
+          ].includes(block.ruleType) ||
+            [
+              "ANTH_FOUR_FIELDS",
+              "ANTH_ADV_PATH_B",
+              "CSC_ELECTIVE",
+              "CSC_MATH_ELECTIVE",
+              "CSC_TOTALS_AND_POLICIES",
+            ].includes(block.code);
+          const completed = canAutoCheck && status.completed;
 
           return (
             <div
-              key={category}
+              key={block.code}
               style={{
                 border: "2px solid #cc0033",
                 borderRadius: "10px",
@@ -233,68 +303,47 @@ function MajorRequirements({ semesters }) {
                 backgroundColor: completed ? "#d4edda" : "#f8d7da",
               }}
             >
-              <h3 style={{ marginTop: 0 }}>{category}</h3>
+              <h3 style={{ marginTop: 0 }}>{block.title}</h3>
+              <p>
+                <strong>Rule:</strong> {getRuleLabel(block)}
+              </p>
 
-              {Array.isArray(value) || value.type === "level-based" ? (
-                <>
-                  {Array.isArray(value) ? (
-                    <ul>
-                      {value.map((course) => (
-                        <li key={course}>{course}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p>
-                      Any {value.prefix} course at level {value.minLevel} or
-                      above
-                    </p>
-                  )}
-                  <p>
-                    <strong>Status:</strong>{" "}
-                    {completed ? " Completed" : " Not completed"}
-                  </p>
+              {block.courseCodes.length > 0 && (
+                <ul>
+                  {block.courseCodes.map((course) => (
+                    <li key={course}>{getCourseLabel(course)}</li>
+                  ))}
+                </ul>
+              )}
 
-                  {completed && (
-                    <p>
-                      <strong>Used:</strong>{" "}
-                      {Array.isArray(satisfied)
-                        ? satisfied.join(", ")
-                        : satisfied}
-                    </p>
-                  )}
-                </>
-              ) : (
-                <>
-                  <p>
-                    <strong>Needed:</strong> {electivesStatus.neededCredits}{" "}
-                    elective credits
-                  </p>
-                  <p>
-                    <strong>Counted so far:</strong>{" "}
-                    {electivesStatus.totalCredits}
-                  </p>
-                  <p>
-                    <strong>Status:</strong>{" "}
-                    {electivesStatus.completed
-                      ? " Completed"
-                      : "Not completed"}
-                  </p>
+              {block.notes && <p>{block.notes}</p>}
 
-                  <div>
-                    <strong>Courses counting toward electives:</strong>
-                    {electivesStatus.usedElectives.length > 0 ? (
-                      <ul>
-                        {electivesStatus.usedElectives.map((course) => (
-                          <li key={course.code}>
-                            {course.code} ({course.creditsCounted} credits)
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p>No elective courses counted yet.</p>
-                    )}
-                  </div>
-                </>
+              <p>
+                <strong>Status:</strong>{" "}
+                {canAutoCheck
+                  ? completed
+                    ? "Completed"
+                    : "Not completed"
+                  : "Review notes"}
+              </p>
+
+              {status.completedCourses.length > 0 && (
+                <p>
+                  <strong>Used:</strong> {status.completedCourses.join(", ")}
+                </p>
+              )}
+
+              {block.ruleType === "choose_credits" && (
+                <p>
+                  <strong>Credits:</strong> {status.completedCredits} /{" "}
+                  {block.minCredits || 0}
+                </p>
+              )}
+
+              {status.detail && (
+                <p>
+                  <strong>Progress:</strong> {status.detail}
+                </p>
               )}
             </div>
           );
